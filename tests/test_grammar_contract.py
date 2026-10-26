@@ -21,13 +21,13 @@ def audit(data):
     if actual != list(INDEX):
         raise ValueError("grammar index missing, reordered or extended")
     names = [data[key] for key in INDEX]
-    if any(not isinstance(name, str) or not name for name in names):
+    if any(not isinstance(name, str) or not name.strip() for name in names):
         raise ValueError("empty or non-string production identity")
     if len(set(names)) != 211:
         raise ValueError("duplicate production identity")
     if set(data) != set(INDEX) | set(names):
         raise ValueError("production definitions missing or orphaned")
-    if any(data[name] is None or data[name] == "" for name in names):
+    if any(data[name] is None or (isinstance(data[name], str) and not data[name].strip()) for name in names):
         raise ValueError("empty production definition")
     return {"index_count": 211, "definition_count": 211}
 
@@ -73,6 +73,34 @@ class GrammarContractTests(unittest.TestCase):
         data = {key: value for key, value in self.fixture.items() if key not in (":001", ":002")}
         data = {":002": self.fixture[":002"], ":001": self.fixture[":001"], **data}
         with self.assertRaisesRegex(ValueError, "reordered"):
+            audit(data)
+
+    def test_non_object_root_rejected(self):
+        with self.assertRaisesRegex(ValueError, "JSON object"):
+            audit([])
+
+    def test_whitespace_production_name_rejected(self):
+        data = deepcopy(self.fixture)
+        data[":001"] = "   "
+        with self.assertRaisesRegex(ValueError, "identity"):
+            audit(data)
+
+    def test_whitespace_only_definition_rejected(self):
+        data = deepcopy(self.fixture)
+        data[data[":001"]] = "  \\t  "
+        with self.assertRaisesRegex(ValueError, "empty production definition"):
+            audit(data)
+
+    def test_nonstring_production_name_rejected(self):
+        data = deepcopy(self.fixture)
+        data[":003"] = 123
+        with self.assertRaisesRegex(ValueError, "identity"):
+            audit(data)
+
+    def test_malformed_index_injection_rejected(self):
+        data = deepcopy(self.fixture)
+        data[":1"] = data[":001"]
+        with self.assertRaisesRegex(ValueError, "orphaned"):
             audit(data)
 
 if __name__ == "__main__":
