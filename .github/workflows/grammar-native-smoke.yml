@@ -1,0 +1,52 @@
+name: YAML grammar offline source smoke
+
+on:
+  pull_request:
+    paths:
+      - "yaml-spec-1.2.json"
+      - "yaml-spec-1.2.yaml"
+      - "yaml-spec-1.2.txt"
+      - "yaml-spec-1.2-comments.yaml"
+      - "Makefile"
+      - "bin/**"
+      - "tests/**"
+      - ".github/workflows/grammar-native-smoke.yml"
+  push:
+    branches: [master]
+    paths:
+      - "yaml-spec-1.2.json"
+      - "yaml-spec-1.2.yaml"
+      - "yaml-spec-1.2.txt"
+      - "yaml-spec-1.2-comments.yaml"
+      - "Makefile"
+      - "bin/**"
+      - "tests/**"
+      - ".github/workflows/grammar-native-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-grammar:
+    name: Offline fixture integrity (211 productions)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Verify exact head and source fixture
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python -m unittest discover -s tests -p 'test_*.py' -v
+          sha256sum yaml-spec-1.2.json
