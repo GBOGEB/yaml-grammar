@@ -14,6 +14,21 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "yaml-spec-1.2.json"
 INDEX = tuple(f":{n:03d}" for n in range(1, 212))
 
+def parse_strict(raw):
+    """Refuse duplicate keys and non-finite pseudo-JSON, including nested rows."""
+    def unique_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON object key: " + key)
+            result[key] = value
+        return result
+
+    def invalid_constant(value):
+        raise ValueError("non-finite JSON number: " + value)
+
+    return json.loads(raw, object_pairs_hook=unique_pairs, parse_constant=invalid_constant)
+
 def audit(data):
     if not isinstance(data, dict):
         raise ValueError("grammar must be a JSON object")
@@ -35,7 +50,7 @@ class GrammarContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.raw = SOURCE.read_bytes()
-        cls.fixture = json.loads(cls.raw)
+        cls.fixture = parse_strict(cls.raw)
 
     def test_exact_211_productions_and_complete_definitions(self):
         self.assertEqual(audit(self.fixture), {"index_count": 211, "definition_count": 211})
@@ -43,7 +58,19 @@ class GrammarContractTests(unittest.TestCase):
     def test_source_digest_report_is_byte_bound_not_acceptance(self):
         digest = hashlib.sha256(self.raw).hexdigest()
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
-        self.assertEqual(json.loads(self.raw)[":211"], "l-yaml-stream")
+        self.assertEqual(parse_strict(self.raw)[":211"], "l-yaml-stream")
+
+    def test_duplicate_json_key_rejected_even_when_last_value_matches(self):
+        with self.assertRaisesRegex(ValueError, "duplicate JSON object key"):
+            parse_strict(b'{"a": 1, "a": 1}')
+        with self.assertRaisesRegex(ValueError, "duplicate JSON object key"):
+            parse_strict(b'{"outer": {"rule": 1, "rule": 2}}')
+
+    def test_nonfinite_extension_rejected(self):
+        for value in (b'{"value": NaN}', b'{"value": Infinity}', b'{"value": -Infinity}'):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "non-finite JSON"):
+                    parse_strict(value)
 
     def test_deleted_production_rejected(self):
         data = deepcopy(self.fixture)
