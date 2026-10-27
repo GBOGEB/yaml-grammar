@@ -113,10 +113,25 @@ class GrammarContractTests(unittest.TestCase):
             audit(data)
 
     def test_whitespace_only_definition_rejected(self):
+        for value in (" ", "\t", "\r\n", "\u00a0"):
+            with self.subTest(value=repr(value)):
+                data = deepcopy(self.fixture)
+                data[data[":001"]] = value
+                with self.assertRaisesRegex(ValueError, "empty production definition"):
+                    audit(data)
+
+    def test_literal_backslash_t_is_not_whitespace(self):
         data = deepcopy(self.fixture)
-        data[data[":001"]] = "  \\t  "
-        with self.assertRaisesRegex(ValueError, "empty production definition"):
-            audit(data)
+        data[data[":001"]] = r"\t"
+        self.assertEqual(audit(data), {"index_count": 211, "definition_count": 211})
+
+    def test_empty_container_definitions_rejected(self):
+        for value in ({}, []):
+            with self.subTest(type=type(value).__name__):
+                data = deepcopy(self.fixture)
+                data[data[":001"]] = value
+                with self.assertRaisesRegex(ValueError, "empty production definition"):
+                    audit(data)
 
     def test_nonstring_production_name_rejected(self):
         data = deepcopy(self.fixture)
