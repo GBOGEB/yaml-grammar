@@ -1,0 +1,44 @@
+name: Build contract (stdlib-only, SHA-pinned)
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stdlib-contract:
+    name: Stdlib-only contract on Python floor 3.11
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Set up Python (stated floor)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Build-contract tests (minimum 8)
+        run: |
+          set -euo pipefail
+          python -I -S -m unittest discover -s tests -p 'test_build_contract.py' -v 2>&1 | tee contract.log
+          ran=$(sed -n 's/^Ran \([0-9]*\) tests\{0,1\} in.*/\1/p' contract.log)
+          if [ -z "$ran" ] || [ "$ran" -lt 8 ]; then
+            echo "::error title=Zero-test guard::build-contract ran '${ran:-0}' tests, expected >= 8"
+            exit 1
+          fi
+      - name: Whole suite without site-packages (minimum 24)
+        run: |
+          set -euo pipefail
+          python -I -S -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee suite.log
+          ran=$(sed -n 's/^Ran \([0-9]*\) tests\{0,1\} in.*/\1/p' suite.log)
+          if [ -z "$ran" ] || [ "$ran" -lt 24 ]; then
+            echo "::error title=Zero-test guard::suite ran '${ran:-0}' tests, expected >= 24"
+            exit 1
+          fi
