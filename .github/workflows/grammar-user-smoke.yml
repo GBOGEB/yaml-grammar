@@ -1,0 +1,82 @@
+name: YAML grammar user-side smoke
+
+# JADE H06: exercises the grammar files the way a user/maintainer does, with
+# tooling independent of the Python unittest suite in tests/:
+#   A. the upstream Makefile target `make comments` (bin/yaml-grammar-to-comments)
+#      must reproduce the committed yaml-spec-1.2-comments.yaml byte-for-byte;
+#   B. an independent YAML 1.2 loader (Perl YAML::PP) must load
+#      yaml-spec-1.2.yaml into exactly the structure of yaml-spec-1.2.json.
+# Each check has a negative control that must fail on a mutated copy.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  user-smoke:
+    name: make comments + YAML::PP parity (211 rules)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install Perl toolchain from the Ubuntu 24.04 archive
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libyaml-pp-perl libio-all-perl libxxx-perl
+          dpkg-query -W -f='${Package} ${Version}\n' libyaml-pp-perl libio-all-perl libxxx-perl perl
+
+      - name: "A: make comments reproduces committed comments file"
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          make comments
+          entries=$(grep -cE "^'[0-9]{3}':" yaml-spec-1.2-comments.yaml || true)
+          if [ "${entries:-0}" -lt 23 ]; then
+            echo "::error title=Zero-test guard::regenerated comments has ${entries:-0} entries, expected >= 23"
+            exit 1
+          fi
+          if ! git diff --exit-code --stat -- yaml-spec-1.2-comments.yaml; then
+            echo "::error file=yaml-spec-1.2-comments.yaml,title=Comments drift::make comments output differs from the committed file"
+            exit 1
+          fi
+          echo "make comments reproduced $entries entries byte-for-byte"
+
+      - name: "A negative control: a changed rule comment must change the output"
+        run: |
+          set -euo pipefail
+          mutated="$RUNNER_TEMP/mutated.yaml"
+          sed 's/^# This is the complete set of characters allowed in a YAML stream\./# MUTATED/' yaml-spec-1.2.yaml > "$mutated"
+          if cmp -s yaml-spec-1.2.yaml "$mutated"; then echo "::error title=Negative control::YAML mutation did not apply"; exit 1; fi
+          bin/yaml-grammar-to-comments "$mutated" > "$RUNNER_TEMP/mutated-comments.yaml"
+          if cmp -s yaml-spec-1.2-comments.yaml "$RUNNER_TEMP/mutated-comments.yaml"; then
+            echo "::error title=Negative control::comments generator ignored a mutated rule comment"
+            exit 1
+          fi
+          echo "negative control A rejected as expected"
+
+      - name: "B: YAML::PP load of grammar YAML equals committed JSON"
+        run: perl smoke/yaml_json_parity.pl yaml-spec-1.2.yaml yaml-spec-1.2.json 211
+
+      - name: "B negative control: a one-value JSON mutation must be detected"
+        run: |
+          set -euo pipefail
+          mutated="$RUNNER_TEMP/mutated.json"
+          sed '0,/"c-sequence-entry": "-"/s//"c-sequence-entry": "+"/' yaml-spec-1.2.json > "$mutated"
+          if cmp -s yaml-spec-1.2.json "$mutated"; then echo "::error title=Negative control::JSON mutation did not apply"; exit 1; fi
+          if perl smoke/yaml_json_parity.pl yaml-spec-1.2.yaml "$mutated" 211 > "$RUNNER_TEMP/neg.log"; then
+            echo "::error title=Negative control::parity check accepted a mutated JSON"
+            exit 1
+          fi
+          grep -q 'c-sequence-entry: value' "$RUNNER_TEMP/neg.log"
+          echo "negative control B rejected as expected"
