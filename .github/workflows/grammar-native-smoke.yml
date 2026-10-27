@@ -13,15 +13,6 @@ on:
       - ".github/workflows/grammar-native-smoke.yml"
   push:
     branches: [master]
-    paths:
-      - "yaml-spec-1.2.json"
-      - "yaml-spec-1.2.yaml"
-      - "yaml-spec-1.2.txt"
-      - "yaml-spec-1.2-comments.yaml"
-      - "Makefile"
-      - "bin/**"
-      - "tests/**"
-      - ".github/workflows/grammar-native-smoke.yml"
   workflow_dispatch:
 
 permissions:
