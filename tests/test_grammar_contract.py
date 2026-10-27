@@ -42,8 +42,12 @@ def audit(data):
         raise ValueError("duplicate production identity")
     if set(data) != set(INDEX) | set(names):
         raise ValueError("production definitions missing or orphaned")
-    if any(data[name] is None or (isinstance(data[name], str) and not data[name].strip()) for name in names):
-        raise ValueError("empty production definition")
+    for name in names:
+        definition = data[name]
+        if not isinstance(definition, (str, dict, list)):
+            raise ValueError("invalid production definition type")
+        if not definition or (isinstance(definition, str) and not definition.strip()):
+            raise ValueError("empty production definition")
     return {"index_count": 211, "definition_count": 211}
 
 class GrammarContractTests(unittest.TestCase):
